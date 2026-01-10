@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftData
+import SwiftUI
 
 @Observable
 class TodoViewModel {
@@ -329,6 +330,46 @@ class TodoViewModel {
         }
     }
 
+    /// Calculate how many days a task has been carried over
+    /// Returns 0 if not a carryover, 1 for first carryover, up to 7+ for oldest
+    func carryoverDaysCount(for item: TodoItem) -> Int {
+        guard let itemList = item.dailyList else { return 0 }
+
+        // Find the earliest date this task group appears
+        var earliestDate: Date? = nil
+        for list in allLists {
+            if list.items.contains(where: { $0.taskGroupId == item.taskGroupId }) {
+                if earliestDate == nil || list.date < earliestDate! {
+                    earliestDate = list.date
+                }
+            }
+        }
+
+        guard let earliest = earliestDate else { return 0 }
+
+        // Calculate the number of days between earliest appearance and current item's list
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: earliest, to: itemList.date).day ?? 0
+        return days
+    }
+
+    /// Get the badge color for carryover indicator
+    /// Interpolates from orange (day 1) to red (day 7+) based on how long task has been pending
+    func carryoverBadgeColor(for item: TodoItem) -> Color {
+        let days = carryoverDaysCount(for: item)
+
+        // Clamp to 0-7 range for interpolation
+        let clampedDays = min(max(days, 0), 7)
+
+        // Interpolate from orange to red
+        // Orange: RGB(255, 165, 0) -> Red: RGB(255, 0, 0)
+        // Only the green component changes: 165 -> 0 over 7 days
+        let progress = Double(clampedDays) / 7.0
+        let greenValue = 0.65 * (1.0 - progress)  // 0.65 is approximately 165/255
+
+        return Color(red: 1.0, green: greenValue, blue: 0.0)
+    }
+
     func toggleItemCompletion(_ item: TodoItem, markAllLinked: Bool = true) {
         let wasCompleted = item.isCompleted
         let newCompletionState = !item.isCompleted
@@ -381,12 +422,44 @@ class TodoViewModel {
         saveContext()
     }
 
+    /// Count unique completed tasks by taskGroupId
+    /// Tasks with the same taskGroupId (carried over) are counted as one
     var totalCompletedTasks: Int {
-        allLists.flatMap { $0.items }.filter { $0.isCompleted }.count
+        let allItems = allLists.flatMap { $0.items }
+        var seenTaskGroups = Set<UUID>()
+        var count = 0
+
+        for item in allItems {
+            if !seenTaskGroups.contains(item.taskGroupId) {
+                seenTaskGroups.insert(item.taskGroupId)
+                // A task group is completed if any instance is completed
+                let isGroupCompleted = allItems.contains { $0.taskGroupId == item.taskGroupId && $0.isCompleted }
+                if isGroupCompleted {
+                    count += 1
+                }
+            }
+        }
+        return count
     }
 
+    /// Count unique pending tasks by taskGroupId
+    /// Tasks with the same taskGroupId (carried over) are counted as one
     var totalPendingTasks: Int {
-        allLists.flatMap { $0.items }.filter { !$0.isCompleted }.count
+        let allItems = allLists.flatMap { $0.items }
+        var seenTaskGroups = Set<UUID>()
+        var count = 0
+
+        for item in allItems {
+            if !seenTaskGroups.contains(item.taskGroupId) {
+                seenTaskGroups.insert(item.taskGroupId)
+                // A task group is pending if no instance is completed
+                let isGroupCompleted = allItems.contains { $0.taskGroupId == item.taskGroupId && $0.isCompleted }
+                if !isGroupCompleted {
+                    count += 1
+                }
+            }
+        }
+        return count
     }
 
     var todayCompletedTasks: Int {
@@ -420,9 +493,12 @@ class TodoViewModel {
         return sum / Double(rates.count)
     }
 
-    // Total tasks (completed + pending)
+    /// Total unique tasks (completed + pending) by taskGroupId
+    /// Tasks with the same taskGroupId (carried over) are counted as one
     var totalTasks: Int {
-        allLists.flatMap { $0.items }.count
+        let allItems = allLists.flatMap { $0.items }
+        let uniqueTaskGroups = Set(allItems.map { $0.taskGroupId })
+        return uniqueTaskGroups.count
     }
 
     // Today's completion rate
@@ -496,26 +572,38 @@ class TodoViewModel {
 
     /// Recalculate cached statistics when data changes
     private func recalculateStatistics() {
-        // Recalculate average completion time
+        // Recalculate average completion time using unique task groups
+        // For carried-over tasks, use earliest creation date and latest completion date
+        let allItems = allLists.flatMap { $0.items }
+        var processedTaskGroups = Set<UUID>()
         var totalMinutes: Double = 0
-        var daysWithCompletedTasks = 0
+        var completedTaskCount = 0
 
-        for list in allLists {
-            let completedItems = list.items.filter { $0.isCompleted && $0.completedDate != nil }
-            if !completedItems.isEmpty {
-                var dayTotalMinutes: Double = 0
-                for item in completedItems {
-                    let timeInterval = item.completedDate!.timeIntervalSince(item.createdDate)
-                    dayTotalMinutes += timeInterval / 60
-                }
-                totalMinutes += dayTotalMinutes / Double(completedItems.count)
-                daysWithCompletedTasks += 1
+        for item in allItems {
+            guard !processedTaskGroups.contains(item.taskGroupId) else { continue }
+            processedTaskGroups.insert(item.taskGroupId)
+
+            // Find all items in this task group
+            let groupItems = allItems.filter { $0.taskGroupId == item.taskGroupId }
+
+            // Check if any item in the group is completed
+            guard let completedItem = groupItems.first(where: { $0.isCompleted && $0.completedDate != nil }) else {
+                continue
             }
+
+            // Find the earliest creation date in the group (original task)
+            let earliestCreatedDate = groupItems.map { $0.createdDate }.min() ?? item.createdDate
+
+            // Calculate time from original creation to completion
+            let timeInterval = completedItem.completedDate!.timeIntervalSince(earliestCreatedDate)
+            totalMinutes += timeInterval / 60
+            completedTaskCount += 1
         }
 
-        cachedAverageCompletionTime = daysWithCompletedTasks > 0 ? totalMinutes / Double(daysWithCompletedTasks) : 0
+        cachedAverageCompletionTime = completedTaskCount > 0 ? totalMinutes / Double(completedTaskCount) : 0
 
-        // Recalculate daily completion rates
+        // Recalculate daily completion rates (per-day view, not unique task groups)
+        // This shows daily productivity: how many of that day's tasks were completed
         cachedDailyCompletionRates = allLists.map { list in
             let total = list.items.count
             let completed = list.items.filter { $0.isCompleted }.count

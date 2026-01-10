@@ -544,16 +544,19 @@ struct TodoItemRow: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Carryover indicator badge
+                    // Carryover indicator badge with gradient color based on age
                     if let vm = viewModel, vm.isCarryoverItem(item) && !item.isCompleted {
+                        let carryoverDays = vm.carryoverDaysCount(for: item)
                         Text("↻")
                             .font(.caption2)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
                             .padding(2)
-                            .background(Color.orange)
+                            .background(vm.carryoverBadgeColor(for: item))
                             .clipShape(Circle())
-                            .help("This task was carried over from a previous day")
+                            .help(carryoverDays == 1
+                                ? "This task was carried over from yesterday"
+                                : "This task has been pending for \(carryoverDays) days")
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
