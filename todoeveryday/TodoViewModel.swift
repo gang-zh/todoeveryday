@@ -108,7 +108,7 @@ class TodoViewModel {
             if let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: newList.date),
                let yesterdayList = allLists.first(where: { Calendar.current.isDate($0.date, inSameDayAs: yesterday) }) {
                 // Only carry over top-level incomplete items (items without a parent)
-                let incompleteTopLevelItems = yesterdayList.items.filter { !$0.isCompleted && $0.parent == nil }
+                let incompleteTopLevelItems = yesterdayList.topLevelItems.filter { !$0.isCompleted }
                 for item in incompleteTopLevelItems {
                     let newItem = copyItemWithChildren(item)
                     newList.items.append(newItem)
@@ -149,113 +149,91 @@ class TodoViewModel {
         return newItem
     }
     
-    // DEBUG: Manually create a day for a specific date (for testing carryover)
-    // DEBUG: Manually create the next day after the most recent day
-    func createNextDebugDay(autoCarryover: Bool = true, createWeekendDays: Bool = true) {
-        // Find the most recent date (could be today or a future date if debug days exist)
-        guard let mostRecentDate = allLists.map({ $0.date }).max() else {
-            print("DEBUG: No lists exist, cannot create next day")
-            return
-        }
+    // MARK: - Debug Day Creation (consolidated)
 
-        // Create the next day after the most recent date
-        guard let nextDay = Calendar.current.date(byAdding: .day, value: 1, to: mostRecentDate) else {
-            print("DEBUG: Failed to calculate next day")
-            return
-        }
-
-        let normalizedDate = Calendar.current.startOfDay(for: nextDay)
-
-        // Skip if it's a weekend and weekend creation is disabled
-        if isWeekend(normalizedDate) && !createWeekendDays {
-            let weekday = Calendar.current.component(.weekday, from: normalizedDate)
-            print("DEBUG: Skipping weekend day creation (next day is \(weekday == 1 ? "Sunday" : "Saturday"))")
-            return
-        }
-
+    /// Creates a debug day for a specific date with optional carryover
+    /// - Parameters:
+    ///   - date: The date to create the list for
+    ///   - carryoverFrom: Optional source list for carrying over incomplete items
+    ///   - createWeekendDays: Whether to create weekend days
+    ///   - setAsToday: Whether to set this list as the active "today"
+    /// - Returns: The created list, or nil if skipped
+    @discardableResult
+    private func createDebugDay(
+        for date: Date,
+        carryoverFrom sourceList: DailyTodoList? = nil,
+        createWeekendDays: Bool = true,
+        setAsToday: Bool = false
+    ) -> DailyTodoList? {
+        let normalizedDate = Calendar.current.startOfDay(for: date)
         let calendar = Calendar.current
 
-        // Check if a list already exists for this date (shouldn't happen, but be safe)
-        if allLists.contains(where: { calendar.isDate($0.date, inSameDayAs: normalizedDate) }) {
-            print("DEBUG: List already exists for \(normalizedDate)")
-            return
+        // Skip weekends if disabled
+        if isWeekend(normalizedDate) && !createWeekendDays {
+            let weekday = calendar.component(.weekday, from: normalizedDate)
+            print("DEBUG: Skipping weekend (\(weekday == 1 ? "Sunday" : "Saturday"))")
+            return nil
         }
 
-        // Create new list marked as debug-created
+        // Check for existing list
+        if allLists.contains(where: { calendar.isDate($0.date, inSameDayAs: normalizedDate) }) {
+            print("DEBUG: List already exists for \(normalizedDate)")
+            return nil
+        }
+
+        // Create new list
         let newList = DailyTodoList(date: normalizedDate, isDebugCreated: true)
 
-        // Find the previous day's list to carry over incomplete items (if auto-carryover is enabled)
-        if autoCarryover {
-            if let previousList = allLists.first(where: { calendar.isDate($0.date, inSameDayAs: mostRecentDate) }) {
-                // Only carry over top-level incomplete items
-                let incompleteTopLevelItems = previousList.items.filter { !$0.isCompleted && $0.parent == nil }
-                for item in incompleteTopLevelItems {
-                    let newItem = copyItemWithChildren(item)
-                    newList.items.append(newItem)
-                    modelContext.insert(newItem)
-                }
+        // Carry over incomplete items if source provided
+        if let sourceList = sourceList {
+            for item in sourceList.topLevelItems.filter({ !$0.isCompleted }) {
+                let newItem = copyItemWithChildren(item)
+                newList.items.append(newItem)
+                modelContext.insert(newItem)
             }
         }
-
-        modelContext.insert(newList)
-        allLists.insert(newList, at: 0)
-        allLists.sort { $0.date > $1.date }
-        separateRecentAndOlderLists()
-
-        // Make this new debug day the active "today" so items can be added to it
-        todaysList = newList
-
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        print("DEBUG: Created list for \(formatter.string(from: normalizedDate)) with \(newList.items.count) items")
-        print("DEBUG: Set as active 'today' list for testing")
-
-        saveContext()
-    }
-
-    // DEBUG: Create a day before the oldest day (for testing historical data)
-    func createPreviousDebugDay(createWeekendDays: Bool = true) {
-        // Find the oldest date
-        guard let oldestDate = allLists.map({ $0.date }).min() else {
-            print("DEBUG: No lists exist, cannot create previous day")
-            return
-        }
-
-        // Create the day before the oldest date
-        guard let previousDay = Calendar.current.date(byAdding: .day, value: -1, to: oldestDate) else {
-            print("DEBUG: Failed to calculate previous day")
-            return
-        }
-
-        let normalizedDate = Calendar.current.startOfDay(for: previousDay)
-
-        // Skip if it's a weekend and weekend creation is disabled
-        if isWeekend(normalizedDate) && !createWeekendDays {
-            let weekday = Calendar.current.component(.weekday, from: normalizedDate)
-            print("DEBUG: Skipping weekend day creation (previous day is \(weekday == 1 ? "Sunday" : "Saturday"))")
-            return
-        }
-
-        let calendar = Calendar.current
-
-        // Check if a list already exists for this date (shouldn't happen, but be safe)
-        if allLists.contains(where: { calendar.isDate($0.date, inSameDayAs: normalizedDate) }) {
-            print("DEBUG: List already exists for \(normalizedDate)")
-            return
-        }
-
-        // Create new empty list marked as debug-created (no carryover since we're going backwards)
-        let newList = DailyTodoList(date: normalizedDate, isDebugCreated: true)
 
         modelContext.insert(newList)
         allLists.append(newList)
         allLists.sort { $0.date > $1.date }
         separateRecentAndOlderLists()
 
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        print("DEBUG: Created previous day list for \(formatter.string(from: normalizedDate))")
+        if setAsToday {
+            todaysList = newList
+        }
 
+        print("DEBUG: Created list for \(newList.dateString) with \(newList.items.count) items")
+        return newList
+    }
+
+    /// Creates the next day after the most recent day (for testing carryover)
+    func createNextDebugDay(autoCarryover: Bool = true, createWeekendDays: Bool = true) {
+        guard let mostRecentDate = allLists.map({ $0.date }).max(),
+              let nextDay = Calendar.current.date(byAdding: .day, value: 1, to: mostRecentDate) else {
+            print("DEBUG: No lists exist or failed to calculate next day")
+            return
+        }
+
+        let sourceList = autoCarryover
+            ? allLists.first(where: { Calendar.current.isDate($0.date, inSameDayAs: mostRecentDate) })
+            : nil
+
+        if createDebugDay(for: nextDay, carryoverFrom: sourceList, createWeekendDays: createWeekendDays, setAsToday: true) != nil {
+            print("DEBUG: Set as active 'today' list for testing")
+        }
+
+        saveContext()
+    }
+
+    /// Creates a day before the oldest day (for testing historical data)
+    func createPreviousDebugDay(createWeekendDays: Bool = true) {
+        guard let oldestDate = allLists.map({ $0.date }).min(),
+              let previousDay = Calendar.current.date(byAdding: .day, value: -1, to: oldestDate) else {
+            print("DEBUG: No lists exist or failed to calculate previous day")
+            return
+        }
+
+        createDebugDay(for: previousDay, createWeekendDays: createWeekendDays)
         saveContext()
     }
 
@@ -263,7 +241,7 @@ class TodoViewModel {
         guard let todaysList = todaysList, !title.isEmpty else { return }
 
         // Calculate the next sortOrder for top-level items
-        let maxSortOrder = todaysList.items.filter { $0.parent == nil }.map { $0.sortOrder }.max() ?? -1
+        let maxSortOrder = todaysList.topLevelItems.map { $0.sortOrder }.max() ?? -1
         let newItem = TodoItem(title: title, isCompleted: false, createdDate: Date(), deadline: deadline, sortOrder: maxSortOrder + 1)
         todaysList.items.append(newItem)
         modelContext.insert(newItem)
@@ -480,8 +458,7 @@ class TodoViewModel {
 
         for list in allLists {
             // Only export top-level items, children will be exported recursively
-            let topLevelItems = list.items.filter { $0.parent == nil }
-            for item in topLevelItems {
+            for item in list.topLevelItems {
                 exportItemToCSV(item, list: list, formatter: formatter, csvText: &csvText, level: 0)
             }
         }

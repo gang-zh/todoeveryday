@@ -10,6 +10,28 @@ import SwiftData
 
 @Model
 final class DailyTodoList {
+    // MARK: - Static DateFormatters (avoid repeated allocation)
+
+    private static let mediumFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter
+    }()
+
+    private static let shortFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+
+    private static let weekdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+        return formatter
+    }()
+
+    // MARK: - Properties
+
     var id: UUID
     var date: Date
     var summary: String
@@ -17,6 +39,8 @@ final class DailyTodoList {
 
     @Relationship(deleteRule: .cascade)
     var items: [TodoItem]
+
+    // MARK: - Initialization
 
     init(date: Date = Date(), summary: String = "", isDebugCreated: Bool = false) {
         self.id = UUID()
@@ -26,22 +50,23 @@ final class DailyTodoList {
         self.items = []
     }
 
+    // MARK: - Computed Properties
+
+    /// Top-level items (no parent) for display
+    var topLevelItems: [TodoItem] {
+        items.filter { $0.parent == nil }
+    }
+
     var dateString: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        return formatter.string(from: date)
+        Self.mediumFormatter.string(from: date)
     }
 
     var shortDateString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: date)
+        Self.shortFormatter.string(from: date)
     }
 
     var weekdayString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE"
-        return formatter.string(from: date)
+        Self.weekdayFormatter.string(from: date)
     }
 
     var isToday: Bool {

@@ -10,31 +10,38 @@ import SwiftUI
 import AppKit
 
 extension String {
+    // MARK: - Shared URL Detection
+
+    /// Detects URLs in the string and returns matching ranges
+    /// Uses NSDataDetector for reliable URL detection
+    private func detectURLRanges() -> [NSTextCheckingResult] {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return []
+        }
+        return detector.matches(in: self, options: [], range: NSRange(location: 0, length: utf16.count))
+    }
+
+    // MARK: - SwiftUI AttributedString
+
     func detectURLs() -> AttributedString {
         var attributedString = AttributedString(self)
 
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
-            return attributedString
-        }
+        for match in detectURLRanges().reversed() {
+            guard let url = match.url else { continue }
 
-        let matches = detector.matches(in: self, options: [], range: NSRange(location: 0, length: self.utf16.count))
+            let startIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: match.range.location)
+            let endIndex = attributedString.index(startIndex, offsetByCharacters: match.range.length)
+            let attributedRange = startIndex..<endIndex
 
-        for match in matches.reversed() {
-            guard let range = Range(match.range, in: self) else { continue }
-
-            if let url = match.url {
-                let startIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: match.range.location)
-                let endIndex = attributedString.index(startIndex, offsetByCharacters: match.range.length)
-                let attributedRange = startIndex..<endIndex
-
-                attributedString[attributedRange].link = url
-                attributedString[attributedRange].foregroundColor = .blue
-                attributedString[attributedRange].underlineStyle = .single
-            }
+            attributedString[attributedRange].link = url
+            attributedString[attributedRange].foregroundColor = .blue
+            attributedString[attributedRange].underlineStyle = .single
         }
 
         return attributedString
     }
+
+    // MARK: - AppKit NSAttributedString
 
     func toNSAttributedString(isCompleted: Bool, isOverdue: Bool) -> NSAttributedString {
         let attributedString = NSMutableAttributedString(string: self)
@@ -43,21 +50,14 @@ extension String {
         let textColor: NSColor = isCompleted ? .secondaryLabelColor : (isOverdue ? .systemRed : .labelColor)
         attributedString.addAttribute(.foregroundColor, value: textColor, range: NSRange(location: 0, length: attributedString.length))
 
-        // Detect and style URLs
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
-            return attributedString
-        }
-
-        let matches = detector.matches(in: self, options: [], range: NSRange(location: 0, length: self.utf16.count))
-
-        for match in matches {
-            if let url = match.url {
-                let linkColor: NSColor = isCompleted ? .secondaryLabelColor : .systemBlue
-                attributedString.addAttribute(.link, value: url, range: match.range)
-                attributedString.addAttribute(.foregroundColor, value: linkColor, range: match.range)
-                attributedString.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: match.range)
-                attributedString.addAttribute(.cursor, value: NSCursor.pointingHand, range: match.range)
-            }
+        // Style detected URLs
+        let linkColor: NSColor = isCompleted ? .secondaryLabelColor : .systemBlue
+        for match in detectURLRanges() {
+            guard let url = match.url else { continue }
+            attributedString.addAttribute(.link, value: url, range: match.range)
+            attributedString.addAttribute(.foregroundColor, value: linkColor, range: match.range)
+            attributedString.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: match.range)
+            attributedString.addAttribute(.cursor, value: NSCursor.pointingHand, range: match.range)
         }
 
         return attributedString

@@ -28,20 +28,29 @@ struct ContentView: View {
     @AppStorage("showCarryoverPopup") private var showCarryoverPopup: Bool = true
     @AppStorage("createWeekendDays") private var createWeekendDays: Bool = true
 
+    // MARK: - Navigation Helper
+
+    private func navigateTo(
+        list: DailyTodoList? = nil,
+        showHistory: Bool = false,
+        showStats: Bool = false,
+        showSettings: Bool = false
+    ) {
+        withAnimation {
+            selectedList = list
+            showingHistory = showHistory
+            showingStatistics = showStats
+            showingSettings = showSettings
+        }
+    }
+
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
                 List {
                     if let viewModel = viewModel {
                         ForEach(Array(viewModel.recentLists.prefix(visibleRecentDaysCount)), id: \.id) { list in
-                            Button(action: {
-                                withAnimation {
-                                    selectedList = list
-                                    showingHistory = false
-                                    showingStatistics = false
-                                    showingSettings = false
-                                }
-                            }) {
+                            Button(action: { navigateTo(list: list) }) {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(list.isToday ? "Today" : list.weekdayString)
@@ -52,33 +61,17 @@ struct ContentView: View {
                                     }
                                     Spacer()
 
-                                    // Completed count
-                                    HStack(spacing: 3) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.caption2)
-                                            .foregroundColor(.green)
-                                        Text("\(list.items.filter { $0.isCompleted }.count)")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.green.opacity(0.1))
-                                    .cornerRadius(10)
+                                    StatusBadge(
+                                        icon: "checkmark.circle.fill",
+                                        count: list.items.filter { $0.isCompleted }.count,
+                                        color: .green
+                                    )
 
-                                    // Pending count
-                                    HStack(spacing: 3) {
-                                        Image(systemName: "circle")
-                                            .font(.caption2)
-                                            .foregroundColor(.orange)
-                                        Text("\(list.items.filter { !$0.isCompleted }.count)")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.orange.opacity(0.1))
-                                    .cornerRadius(10)
+                                    StatusBadge(
+                                        icon: "circle",
+                                        count: list.items.filter { !$0.isCompleted }.count,
+                                        color: .orange
+                                    )
 
                                     if !showingStatistics && !showingHistory && selectedList?.id == list.id {
                                         Image(systemName: "checkmark")
@@ -153,14 +146,7 @@ struct ContentView: View {
                         }
 
                         if !viewModel.olderLists.isEmpty {
-                            Button(action: {
-                                withAnimation {
-                                    selectedList = nil
-                                    showingHistory = true
-                                    showingStatistics = false
-                                    showingSettings = false
-                                }
-                            }) {
+                            Button(action: { navigateTo(showHistory: true) }) {
                                 HStack {
                                     Image(systemName: "clock")
                                     Text("History")
@@ -185,14 +171,7 @@ struct ContentView: View {
 
                 if let viewModel = viewModel {
                     // Settings Button
-                    Button(action: {
-                        withAnimation {
-                            selectedList = nil
-                            showingHistory = false
-                            showingStatistics = false
-                            showingSettings = true
-                        }
-                    }) {
+                    Button(action: { navigateTo(showSettings: true) }) {
                         HStack {
                             Image(systemName: "gearshape.fill")
                             Text("Settings")
@@ -210,14 +189,7 @@ struct ContentView: View {
                     .buttonStyle(.plain)
 
                     // Statistics Button
-                    Button(action: {
-                        withAnimation {
-                            selectedList = nil
-                            showingHistory = false
-                            showingStatistics = true
-                            showingSettings = false
-                        }
-                    }) {
+                    Button(action: { navigateTo(showStats: true) }) {
                         HStack {
                             Image(systemName: "chart.bar.fill")
                             Text("Statistics")
@@ -479,7 +451,7 @@ struct DayDetailView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 0) {
-                        ForEach(list.items.filter { $0.parent == nil }.sortedForDisplay(), id: \.id) { item in
+                        ForEach(list.topLevelItems.sortedForDisplay(), id: \.id) { item in
                             TodoItemRow(item: item, viewModel: viewModel, indentLevel: 0, showCarryoverPopup: showCarryoverPopup)
                             Divider()
                         }
@@ -686,31 +658,18 @@ struct TodoItemRow: View {
                 }
 
                 if showDeadlineEditor {
-                    HStack {
-                        DatePicker("Deadline:", selection: $editingDeadline, displayedComponents: [.date, .hourAndMinute])
-                            .datePickerStyle(.compact)
-                            .labelsHidden()
-
-                        Button("Save") {
+                    DeadlineEditor(
+                        deadline: $editingDeadline,
+                        onSave: {
                             viewModel?.updateItemDeadline(item, deadline: editingDeadline)
                             showDeadlineEditor = false
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-
-                        Button("Clear") {
+                        },
+                        onClear: {
                             viewModel?.updateItemDeadline(item, deadline: nil)
                             showDeadlineEditor = false
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-
-                        Button("Cancel") {
-                            showDeadlineEditor = false
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
+                        },
+                        onCancel: { showDeadlineEditor = false }
+                    )
                     .padding(.leading, 44)
                     .padding(.vertical, 4)
                 }
@@ -756,18 +715,13 @@ struct TodoItemRow: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Button("Save") {
-                                viewModel?.updateItemDescription(item, description: editingDescription)
-                                showDescription = false
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-
-                            Button("Cancel") {
-                                showDescription = false
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+                            EditorActions(
+                                onSave: {
+                                    viewModel?.updateItemDescription(item, description: editingDescription)
+                                    showDescription = false
+                                },
+                                onCancel: { showDescription = false }
+                            )
                         }
 
                         TextEditor(text: $editingDescription)
@@ -1182,6 +1136,76 @@ struct StatCard: View {
         .padding()
         .background(Color.secondary.opacity(0.1))
         .cornerRadius(8)
+    }
+}
+
+// MARK: - Reusable Components
+
+/// Reusable badge component for displaying counts with an icon
+struct StatusBadge: View {
+    let icon: String
+    let count: Int
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.caption2)
+                .foregroundColor(color)
+            Text("\(count)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(color.opacity(0.1))
+        .cornerRadius(10)
+    }
+}
+
+/// Reusable deadline editor with save/clear/cancel buttons
+struct DeadlineEditor: View {
+    @Binding var deadline: Date
+    let onSave: () -> Void
+    let onClear: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack {
+            DatePicker("Deadline:", selection: $deadline, displayedComponents: [.date, .hourAndMinute])
+                .datePickerStyle(.compact)
+                .labelsHidden()
+
+            Button("Save", action: onSave)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+            Button("Clear", action: onClear)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+            Button("Cancel", action: onCancel)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+    }
+}
+
+/// Reusable save/cancel button pair for editors
+struct EditorActions: View {
+    let onSave: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack {
+            Button("Save", action: onSave)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+            Button("Cancel", action: onCancel)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
     }
 }
 
