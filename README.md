@@ -19,14 +19,16 @@ A macOS app for managing daily todo lists with automatic task carryover.
 
 ### Carryover
 - Incomplete tasks automatically carry to the next day
-- Orange "↻" badge on carried-over tasks
+- Color-coded "↻" badge (orange→red based on pending days)
+- Tooltip shows how long task has been pending
 - Option to mark all linked instances complete at once
 
 ### History & Stats
 - Last 7 days in sidebar (expandable)
 - Full history view for older lists
 - Daily summaries
-- Statistics dashboard (completion rates, trends)
+- Statistics dashboard with accurate unique task counting
+- Average completion time tracks from original creation to completion
 
 ### Settings
 | Setting | Default | Description |
@@ -70,6 +72,7 @@ See [CLAUDE.md](CLAUDE.md) for detailed technical documentation.
 
 | Version | Highlights |
 |---------|------------|
+| **2.3** | Fixed statistics accuracy, carryover badge color gradient, code refinements |
 | **2.2** | Settings panel, carryover tracking with badges, sidebar pagination |
 | **2.1** | Statistics dashboard, item descriptions |
 | **2.0** | Hierarchical sub-items, drag-drop, editable tasks, clickable URLs |

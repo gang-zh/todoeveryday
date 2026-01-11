@@ -175,11 +175,14 @@ When the app launches:
 - **Preserved on Carryover**: Descriptions are copied when incomplete items move to next day
 - **Export**: Included in CSV export as separate column
 
-### 5. Statistics & Progress Tracking
+### 5. Statistics & Progress Tracking (enhanced in v2.3)
 - **Hidden in Sidebar**: Statistics button shows no numbers, click to view full detail panel
+- **Unique Task Counting**: Carried-over tasks counted once using `taskGroupId` deduplication
+  - `totalCompletedTasks`, `totalPendingTasks`, `totalTasks` use unique task groups
+  - Prevents double-counting tasks that span multiple days
 - **Comprehensive Metrics**:
   - Today's completion rate with visual progress bar
-  - Average completion time (from creation to completion)
+  - Average completion time (from original creation to completion, tracks across carryovers)
   - Daily completion rates for last 7 days
   - Color-coded progress indicators (green/orange/red)
 - **Computed Properties**: All statistics are computed on-demand via @Observable
@@ -199,10 +202,12 @@ The app requires specific entitlements for file operations:
 - `com.apple.security.app-sandbox` - Enable sandbox
 - `com.apple.security.files.user-selected.read-write` - For NSSavePanel (CSV export)
 
-### 9. Task Group Linking (v2.2)
+### 9. Task Group Linking (v2.2, enhanced in v2.3)
 - **taskGroupId Field**: Each TodoItem has a UUID that links all instances of the same task across days
 - **Preserved on Carryover**: When a task carries over, the new instance gets the same `taskGroupId`
-- **Visual Indicator**: Orange "↻" badge shows on carried-over tasks
+- **Visual Indicator**: "↻" badge with color gradient (orange→red based on pending days)
+- **Badge Color Logic**: `carryoverBadgeColor(for:)` interpolates from orange (1 day) to red (7+ days)
+- **Days Tracking**: `carryoverDaysCount(for:)` calculates days since task first appeared
 - **Linked Completion**: When completing a carried-over task, user can mark all linked instances complete
 - **Detection Logic**: `isCarryoverItem()` checks if taskGroupId exists in earlier days
 
@@ -501,6 +506,22 @@ Must include in `todoeveryday.entitlements`:
 
 ## Version History
 
+**v2.3** - Statistics Accuracy & Carryover Improvements (January 2026)
+- **Statistics Accuracy Fixes**:
+  - Fixed double-counting of carried-over tasks in statistics
+  - `totalCompletedTasks`, `totalPendingTasks`, `totalTasks` now count unique tasks by `taskGroupId`
+  - Carried-over tasks counted as single task across all days
+  - Average completion time now tracks from original task creation to completion
+- **Carryover Badge Enhancements**:
+  - Color gradient from orange (1 day) to red (7+ days) based on pending duration
+  - `carryoverDaysCount(for:)` calculates days since task was first created
+  - `carryoverBadgeColor(for:)` interpolates badge color based on age
+  - Dynamic tooltip shows exact number of pending days
+- **Code Quality Improvements**:
+  - Refactored statistics calculation logic for clarity
+  - Improved code organization across ContentView, TodoViewModel, and URLHelper
+  - Better separation of concerns in statistics computation
+
 **v2.2** - Settings, Carryover Tracking & UI Enhancements (January 2026)
 - **Carryover Task Tracking**:
   - Added `taskGroupId` field to link task instances across days
@@ -620,5 +641,5 @@ Must include in `todoeveryday.entitlements`:
 
 ---
 
-*Last Updated: January 8, 2026 - v2.1 Release*
+*Last Updated: January 10, 2026 - v2.3 Release*
 *This document should be updated when significant architectural changes are made.*
